@@ -1,0 +1,17 @@
+{
+  "name": "endpointfinder",
+  "version": "1.0.0",
+  "description": "Finds endpoint from JavaScript content.",
+  "main": "index.js",
+  "scripts": {
+    "test": "./node_modules/.bin/jasmine --config=tests/spec/support/jasmine.json tests/spec/all-spec.js"
+  },
+  "author": "Olivier Arteau",
+  "license": "MIT",
+  "dependencies": {
+    "acorn": "^5.7.3"
+  },
+  "devDependencies": {
+    "jasmine": "^3.2.0"
+  }
+}
