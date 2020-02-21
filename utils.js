@@ -487,6 +487,7 @@ exportFnct.memberExpressionAssignment = memberExpressionAssignment;
 function preAnalysis(tree) {
 	// Make sure all function in this scope have name.
 	tagAnonymousFunctionWithName(tree);
+	divideElementaryCodeBlock(tree);
 }
 
 exportFnct.preAnalysis = preAnalysis;
@@ -675,7 +676,45 @@ function spliceCodeBlock(element, parent) {
 	}
 
 	var position = parent.body.indexOf(element);
-	
+	var after = parent.body.splice(position + 1, parent.body.length - 1 - position);
+	return after;
+}
+
+function createFunctionFromCodeBlock(tree, params) {
+	var expr = createEmptyExpression();
+	expr.body = tree;
+
+	if (!Array.isArray(expr.body)) {
+		expr.body = [expr.body];
+	}
+
+	return {
+		type : "FunctionExpression",
+		id : {
+			"type" : "Identifier",
+			"name" : "sub" + (Math.random().toString(16).substr(2))
+		},
+		params : params || [],
+		body : expr
+	};
+}
+
+function createFunctionInvocation(functionName, params) {
+	return {
+		type : "CallExpression",
+		callee : {
+			type : "Identifier",
+			name : functionName
+		},
+		arguments : params || []
+	};
+}
+
+function createEmptyExpression() {
+	return {
+		type : "BlockStatement",
+		body : []
+	};
 }
 
 /**
@@ -689,7 +728,7 @@ function divideElementaryCodeBlock(tree, parent) {
 		parent = tree;
 	}
 
-	if (!tree) {
+	if (!tree || typeof tree === "string" || typeof tree === "number") {
 		return;
 	}
 
@@ -701,9 +740,6 @@ function divideElementaryCodeBlock(tree, parent) {
 	}
 
 	if (tree.body) {
-		if (!Array.isArray(tree.body)) {
-			tree.body = [tree.body];
-		}
 		newParent = tree;
 	} else {
 		newParent = parent;
@@ -711,7 +747,26 @@ function divideElementaryCodeBlock(tree, parent) {
 
 	switch (tree.type) {
 		case "IfStatement":
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+			var ifTrue = createFunctionFromCodeBlock(tree.consequent); 
+			var ifFalse = createFunctionFromCodeBlock(tree.alternate || createEmptyExpression());
 
+			parent.body.pop();
+			parent.body.push(ifTrue);
+			parent.body.push(ifFalse);
+			parent.body.push(fnctAfter);
+
+			ifTrue.body.body.push(createFunctionInvocation(fnctAfter.id.name));
+			ifFalse.body.body.push(createFunctionInvocation(fnctAfter.id.name));
+
+			parent.body.push(createFunctionInvocation(ifTrue.id.name));
+			parent.body.push(createFunctionInvocation(ifFalse.id.name));
+
+			if (tree.alternate) {
+				divideElementaryCodeBlock(tree.alternate);
+			}
+			divideElementaryCodeBlock(tree.consequent);
+			divideElementaryCodeBlock(fnctAfter);
 			break;
 
 		case "ForStatement":
@@ -731,6 +786,10 @@ function divideElementaryCodeBlock(tree, parent) {
 			break;
 
 		default:
+			if (tree.body) {
+
+			}
+
 			for (let prop in tree) {
 				if (tree.hasOwnProperty(prop)) {
 					divideElementaryCodeBlock(tree[prop], newParent);
