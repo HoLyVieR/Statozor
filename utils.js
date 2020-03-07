@@ -688,12 +688,7 @@ function spliceCodeBlock(element, parent) {
 }
 
 function createFunctionFromCodeBlock(tree, params) {
-	var expr = createEmptyExpression();
-	expr.body = tree;
-
-	if (!Array.isArray(expr.body)) {
-		expr.body = [expr.body];
-	}
+	var expr = wrapInExpression(tree);
 
 	return {
 		type : "FunctionExpression",
@@ -737,6 +732,17 @@ function createEmptyExpression() {
 		type : "BlockStatement",
 		body : []
 	};
+}
+
+function wrapInExpression(astValue) {
+	var expr = createEmptyExpression();
+	expr.body = astValue;
+
+	if (!Array.isArray(expr.body)) {
+		expr.body = [expr.body];
+	}
+
+	return expr;
 }
 
 /**
@@ -797,19 +803,73 @@ function divideElementaryCodeBlock(tree, parent) {
 			break;
 
 		case "ForStatement":
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+			var mainLoop = createFunctionFromCodeBlock(tree.body);
+			var initBlock = createFunctionFromCodeBlock(tree.init);
 
+			parent.body.pop();
+			parent.body.push(mainLoop);
+			parent.body.push(initBlock);
+			parent.body.push(fnctAfter);
+
+			mainLoop.body.body = mainLoop.body.body.concat(wrapInExpression(tree.update));
+			parent.body.push(createReturnValue(createFunctionInvocation(initBlock.id.name)));
+
+			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
+			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name);
+			fnctInvoMain.condition = tree.test;
+			fnctInvoExit.condition = createNotValue(tree.test);
+
+			initBlock.body.body.push(createReturnValue(fnctInvoMain));
+			initBlock.body.body.push(createReturnValue(fnctInvoExit));
+			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
+			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
+
+			divideElementaryCodeBlock(initBlock);
+			divideElementaryCodeBlock(mainLoop);
+			divideElementaryCodeBlock(fnctAfter);
 			break;
 
 		case "DoWhileStatement":
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+			var mainLoop = createFunctionFromCodeBlock(tree.body);
 
+			parent.body.pop();
+			parent.body.push(mainLoop);
+			parent.body.push(fnctAfter);
+
+			parent.body.push(createReturnValue(createFunctionInvocation(mainLoop.id.name)));
+
+			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
+			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name);
+			fnctInvoMain.condition = tree.test;
+			fnctInvoExit.condition = createNotValue(tree.test);
+			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
+			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
 			break;
 
 		case "WhileStatement":
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+			var mainLoop = createFunctionFromCodeBlock(tree.body);
 
+			parent.body.pop();
+			parent.body.push(mainLoop);
+			parent.body.push(fnctAfter);
+
+			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
+			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name);
+			fnctInvoMain.condition = tree.test;
+			fnctInvoExit.condition = createNotValue(tree.test);
+
+			parent.body.push(createReturnValue(fnctInvoMain));
+			parent.body.push(createReturnValue(fnctInvoExit));
+
+			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
+			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
 			break;
 
 		case "SwitchStatement":
-
+			
 			break;
 
 		default:
