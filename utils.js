@@ -415,6 +415,7 @@ function toSymbolic(tree, context, resolveIdentfier) {
 			}
 
 			invocation.position = { start : tree.start, end : tree.end };
+			invocation.condition = tree.condition;
 			context.graph.addInvocation(invocation);
 			context.graph.linkCodeBlockToInvocation(context.codeBlock, invocation);
 			symbolicValue = invocation;
@@ -637,6 +638,12 @@ function analysis(tree, context, partialScope, useNewScope) {
 			case "FunctionExpression":
 				break;
 
+			case "ReturnStatement":
+				var newContext = context.clone();
+				newContext.scope = newScope;
+				analysis({ body : [element.argument] }, newContext, true, false);
+				break;
+
 			default:
 				if (element.body) {
 					var newContext = context.clone();
@@ -710,6 +717,21 @@ function createFunctionInvocation(functionName, params) {
 	};
 }
 
+function createReturnValue(astValue) {
+	return {
+		type : "ReturnStatement",
+		argument : astValue
+	};
+}
+
+function createNotValue(astValue) {
+	return {
+		type : "UnaryExpression",
+		operator : "!",
+		argument : astValue
+	};
+}
+
 function createEmptyExpression() {
 	return {
 		type : "BlockStatement",
@@ -756,16 +778,21 @@ function divideElementaryCodeBlock(tree, parent) {
 			parent.body.push(ifFalse);
 			parent.body.push(fnctAfter);
 
-			ifTrue.body.body.push(createFunctionInvocation(fnctAfter.id.name));
-			ifFalse.body.body.push(createFunctionInvocation(fnctAfter.id.name));
+			ifTrue.body.body[0].body.push(createReturnValue(createFunctionInvocation(fnctAfter.id.name)));
+			ifFalse.body.body[0].body.push(createReturnValue(createFunctionInvocation(fnctAfter.id.name)));
 
-			parent.body.push(createFunctionInvocation(ifTrue.id.name));
-			parent.body.push(createFunctionInvocation(ifFalse.id.name));
+			var fnctInvoTrue = createFunctionInvocation(ifTrue.id.name);
+			var fnctInvoFalse = createFunctionInvocation(ifFalse.id.name);
+			fnctInvoTrue.condition = tree.test;
+			fnctInvoFalse.condition = createNotValue(tree.test);
+			parent.body.push(createReturnValue(fnctInvoTrue));
+			parent.body.push(createReturnValue(fnctInvoFalse));
 
 			if (tree.alternate) {
-				divideElementaryCodeBlock(tree.alternate);
+				divideElementaryCodeBlock(ifFalse);
 			}
-			divideElementaryCodeBlock(tree.consequent);
+
+			divideElementaryCodeBlock(ifTrue);
 			divideElementaryCodeBlock(fnctAfter);
 			break;
 
