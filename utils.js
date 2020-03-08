@@ -66,6 +66,10 @@ exportFnct.clone = clone;
 function collectVar(tree, _collectVar, collectLet) {
 	var variables = [];
 
+	if (!tree) {
+		return variables;
+	}
+
 	if (!tree.body) {
 		tree = { body : tree };
 	}
@@ -734,6 +738,15 @@ function createEmptyExpression() {
 	};
 }
 
+function createEqualityExpression(a, b) {
+	return {
+		type : "BinaryExpression",
+		operator : "==",
+		left : a,
+		right : b
+	};
+}
+
 function wrapInExpression(astValue) {
 	var expr = createEmptyExpression();
 	expr.body = astValue;
@@ -743,6 +756,32 @@ function wrapInExpression(astValue) {
 	}
 
 	return expr;
+}
+
+function replaceBreakStatement(tree, astReplacement) {
+	if (typeof tree != "object" || !tree) {
+		return;
+	}
+
+	if (Array.isArray(tree)) {
+		for (var i=0; i<tree.length; i++) {
+			if (tree[i] && tree[i].type == "BreakStatement") {
+				tree[i] = astReplacement;
+			} else {
+				replaceBreakStatement(tree[i], astReplacement);
+			}
+		}
+	} else {
+		for (var prop in tree) {
+			if (tree.hasOwnProperty(prop)) {
+				if (tree[prop] && tree[prop].type == "BreakStatement") {
+					tree[prop] = astReplacement;
+				} else {
+					replaceBreakStatement(tree[prop], astReplacement);
+				}
+			}
+		}
+	}
 }
 
 /**
@@ -846,6 +885,9 @@ function divideElementaryCodeBlock(tree, parent) {
 			fnctInvoExit.condition = createNotValue(tree.test);
 			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
 			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
+
+			divideElementaryCodeBlock(mainLoop);
+			divideElementaryCodeBlock(fnctAfter);
 			break;
 
 		case "WhileStatement":
@@ -866,10 +908,55 @@ function divideElementaryCodeBlock(tree, parent) {
 
 			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
 			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
+
+			divideElementaryCodeBlock(mainLoop);
+			divideElementaryCodeBlock(fnctAfter);
 			break;
 
 		case "SwitchStatement":
-			
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+			var discriminant = tree.discriminant;
+			var returnToEnd = createReturnValue(createFunctionInvocation(fnctAfter.id.name));
+
+			parent.body.pop();
+			parent.body.push(fnctAfter);
+
+			var previousFunction;
+			var accumulatedCases = [];
+
+			for (var i=0; i<tree.cases.length; i++) {
+				var switchCase = tree.cases[i];
+				var codeBlockCase = createFunctionFromCodeBlock(switchCase.consequent);
+				parent.body.push(codeBlockCase);
+
+				if (previousFunction) {
+					previousFunction.body.body.push(createReturnValue(createFunctionInvocation(codeBlockCase.id.name)));
+				}
+
+				var fnctInvoCase = createFunctionInvocation(codeBlockCase.id.name);
+
+				if (switchCase.test != null) {
+					fnctInvoCase.condition = createEqualityExpression(discriminant, switchCase.test);
+				} else {
+					// Case for "default"
+
+				}
+
+				replaceBreakStatement(codeBlockCase.body.body, returnToEnd);
+				previousFunction = codeBlockCase;
+				accumulatedCases.push(codeBlockCase);
+				parent.body.push(createReturnValue(fnctInvoCase));
+			}
+
+			// Handling for empty switch/case
+			if (previousFunction) {
+				previousFunction.body.body.push(returnToEnd);
+			}
+
+			for (var i=0; i<accumulatedCases.length; i++) {
+				divideElementaryCodeBlock(accumulatedCases[i]);
+			}
+
 			break;
 
 		default:
