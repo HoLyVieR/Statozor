@@ -29,4 +29,12 @@ FunctionInvocation.prototype.equals = function (val) {
 	return good;
 }
 
+FunctionInvocation.prototype.toHumanValue = function () {
+	return this.fnct.toHumanValue() + "(" + this.arguments.map(
+		function (args) { 
+			return args.toHumanValue(); 
+		}).join(", ") 
+	+ ")";
+};
+
 module.exports = FunctionInvocation;

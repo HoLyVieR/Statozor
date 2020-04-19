@@ -27,10 +27,9 @@ FunctionArgument.prototype.equals = function (val) {
 		return false;
 	}
 
-	if (this.name !== val.name) {
+	/*if (this.name !== val.name) {
 		return false;
-	}
-
+	}*/
 	
 	if (typeof this.fnct === "string") {
 		if (val.fnct !== this.fnct) {

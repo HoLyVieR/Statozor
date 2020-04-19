@@ -76,6 +76,10 @@ function collectVar(tree, _collectVar, collectLet) {
 
 	if (!Array.isArray(tree.body)) {
 		tree.body = [tree.body];
+
+		if (tree[0] && tree[0].synthetic) {
+			tree.body.synthetic = tree[0].synthetic;
+		}
 	}
 
 	for (let i=0; i<tree.body.length; i++) {
@@ -489,6 +493,184 @@ function memberExpressionAssignment(left, right, assignations) {
 
 exportFnct.memberExpressionAssignment = memberExpressionAssignment;
 
+function findExactCall(result, search) {
+	var invocations = result.graph.getInvocations();
+	var results = [];
+
+	for (var i=0; i<invocations.length; i++) {
+		var invocation = invocations[i];
+		var fnct = invocation.fnct;
+
+		if (fnct.equals(search)) {
+			results.push(invocation);
+		}
+	}
+
+	return results;
+}
+
+exportFnct.findExactCall = findExactCall;
+
+function replaceArgumentsElements(source, replacement) {
+	if (source.__type === "FunctionArgument") {
+		return replacement[source.index];
+	}
+
+	if (Array.isArray(source)) {
+		for (var i=0; i<source.length; i++) {
+			source[i] = replaceArgumentsElements(source[i], replacement);
+		}
+	} else if (typeof source === "object") {
+		for (var i in source) {
+			source[i] = replaceArgumentsElements(source[i], replacement);
+		}
+	}
+
+	return source;
+}
+
+function findObjectType(value, type) {
+	var results = [];
+
+	if (value instanceof type) {
+		results.push(value);
+	}
+
+	if (Array.isArray(value)) {
+		for (var i=0; i<value.length; i++) {
+			results = results.concat(findObjectType(value[i], type));
+		}
+	} else if (typeof value === "object") {
+		for (var i in value) {
+			results = results.concat(findObjectType(value[i], type));
+		}
+	}
+
+	return results;
+}
+
+function getFunctionArguments(value) {
+	return findObjectType(value, FunctionArgument);
+}
+
+function getFunctionCall(value) {
+	var results = [];
+	results = results.concat(findObjectType(value, FunctionInvocation));
+	results = results.concat(findObjectType(value, GlobalFunctionCall));
+	results = results.concat(findObjectType(value, LocalFunctionCall));
+	return results;
+}
+
+function findInvocationsOf(result, elementId) {
+	if (!elementId) {
+		return [];
+	}
+
+	var refs = result.graph.findReferencesTo(elementId);
+
+	for (var i=0; i<refs.length; i++) {
+		var ref = refs[i];
+		var parent = ref.parent;
+		var property = ref.property;
+
+		switch (parent.constructor.name) {
+			case "FunctionInvocation":
+			case "LocalFunctionCall":
+				if (property === "arguments") {
+					var invokedFunction = parent.reference || parent.fnct;
+					var results = [];
+
+					if (invokedFunction instanceof Reference) {
+						invokedFunction = [invokedFunction];
+					} else {
+						invokedFunction = resolveValues(result, invokedFunction);
+
+						// Keep only fully resolved value
+						// May need further analysis to extract possible function
+						invokedFunction = invokedFunction.filter(function (fnct) {
+							return fnct instanceof Reference;
+						});
+					}
+
+					for (var j=0; j<parent.arguments.length; j++) {
+						if (parent.arguments[j].id === elementId) {
+							for (var k=0; k<invokedFunction.length; k++) {
+								var fnctArgument = result.graph.findValue(new FunctionArgument(invokedFunction[k].name, "", j));
+								results = results.concat(findInvocationsOf(result, fnctArgument.id));
+							}
+						}
+					}
+
+					return results;
+				} else {
+					return [parent];
+				}
+				break;
+
+			case "GlobalFunctionCall":
+				// Can't resolve those as we don't know what it points to :( 
+				break;
+
+			default:
+				return findInvocationsOf(result, parent.id);
+				break;
+		}
+	}
+
+	return [];
+}
+
+exportFnct.findInvocationsOf = findInvocationsOf;
+
+function resolveValues(result, values) {
+	var args = [];
+	for (var i=0; i<values.length; i++) {
+		args = args.concat(getFunctionArguments(values));
+	}
+
+	// If there are parameters to resolve
+	if (args.length > 0) {
+		var argsPriority = args.sort(function (functionArgA, functionArgB) {
+			var valueA = functionArgA.fnct.split(CONST_SEPARATOR_ID).length;
+			var valueB = functionArgB.fnct.split(CONST_SEPARATOR_ID).length;
+
+			// Descending order
+			return valueB - valueA;
+		});
+
+		var nextFunction = argsPriority[0].fnct;
+		var codeBlock = result.graph.findCodeBlock(nextFunction);
+
+		var invocations = findInvocationsOf(result, codeBlock.id);
+		var possibleResults = [];
+
+		for (var i=0; i<invocations.length; i++) {
+			var newValues = clone(values);
+
+			for (var j=0; j<newValues.length; j++) {
+				newValues[j] = replaceArgumentsElements(newValues[j], invocations[i].arguments);	
+			}
+
+			possibleResults = possibleResults.concat(newValues);
+		}
+
+		return resolveValues(result, possibleResults);
+	}
+
+	var call = [];
+	for (var i=0; i<values.length; i++) {
+		call = call.concat(getFunctionArguments(values));
+	}
+
+	if (call.length > 0) {
+
+	}
+
+	return values;
+}
+
+exportFnct.resolveValues = resolveValues;
+
 function preAnalysis(tree) {
 	// Make sure all function in this scope have name.
 	tagAnonymousFunctionWithName(tree);
@@ -731,11 +913,22 @@ function createNotValue(astValue) {
 	};
 }
 
-function createEmptyExpression() {
+function createAndValue(astValueLeft, astValueRight) {
 	return {
+		type : "LogicalExpression",
+		operator : "&&",
+		left : astValueLeft,
+		right : astValueRight
+	};
+}
+
+function createEmptyExpression() {
+	var result = {
 		type : "BlockStatement",
 		body : []
 	};
+	result.body.synthetic = true;
+	return result;
 }
 
 function createEqualityExpression(a, b) {
@@ -747,14 +940,24 @@ function createEqualityExpression(a, b) {
 	};
 }
 
+function createLiteral(value) {
+	return {
+		type : "Literal",
+		value : value,
+		raw : value + ""
+	};
+}
+
 function wrapInExpression(astValue) {
 	var expr = createEmptyExpression();
 	expr.body = astValue;
 
 	if (!Array.isArray(expr.body)) {
+		expr.body.synthetic = true;
 		expr.body = [expr.body];
 	}
 
+	expr.body.synthetic = true;
 	return expr;
 }
 
@@ -852,6 +1055,7 @@ function divideElementaryCodeBlock(tree, parent) {
 			parent.body.push(fnctAfter);
 
 			mainLoop.body.body = mainLoop.body.body.concat(wrapInExpression(tree.update));
+			mainLoop.body.body.synthetic = true;
 			parent.body.push(createReturnValue(createFunctionInvocation(initBlock.id.name)));
 
 			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
@@ -914,6 +1118,11 @@ function divideElementaryCodeBlock(tree, parent) {
 			break;
 
 		case "SwitchStatement":
+			// Ignore switch case with no "case".
+			if (tree.cases.length == 0) {
+				break;
+			}
+
 			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
 			var discriminant = tree.discriminant;
 			var returnToEnd = createReturnValue(createFunctionInvocation(fnctAfter.id.name));
@@ -939,7 +1148,18 @@ function divideElementaryCodeBlock(tree, parent) {
 					fnctInvoCase.condition = createEqualityExpression(discriminant, switchCase.test);
 				} else {
 					// Case for "default"
+					var accumulatedTest = null;
+					for (var j=0; j<tree.cases.length; j++) {
+						var switchCaseInner = tree.cases[j];
+						var notTest = createNotValue(createEqualityExpression(discriminant, switchCase.test));
 
+						if (accumulatedTest == null) {
+							accumulatedTest = notTest;
+						} else {
+							accumulatedTest = createAndValue(accumulatedTest, notTest);
+						}
+					}
+					fnctInvoCase.condition = accumulatedTest || createLiteral(true);
 				}
 
 				replaceBreakStatement(codeBlockCase.body.body, returnToEnd);
@@ -960,8 +1180,18 @@ function divideElementaryCodeBlock(tree, parent) {
 			break;
 
 		default:
-			if (tree.body) {
+			if (tree.body && !tree.body.synthetic) {
+				/*var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+				var returnToEnd = createReturnValue(createFunctionInvocation(fnctAfter.id.name));
+				var fnctBody = createFunctionFromCodeBlock(tree);
+				fnctBody.body.body.push(returnToEnd);
 
+				parent.body.pop();
+				parent.body.push(fnctAfter);
+				parent.body.push(fnctBody);
+				parent.body.push(createReturnValue(createFunctionInvocation(fnctBody.id.name)));
+				divideElementaryCodeBlock(fnctBody.body);
+				break;*/
 			}
 
 			for (let prop in tree) {

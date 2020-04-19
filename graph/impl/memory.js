@@ -32,6 +32,15 @@ function getInstance(options) {
 	}
 	self.getCodeBlocks = getCodeBlocks;
 
+	function findCodeBlock(name) {
+		for (var i in codeBlocks) {
+			if (codeBlocks[i].name === name) {
+				return codeBlocks[i];
+			}
+		}
+	}
+	self.findCodeBlock = findCodeBlock;
+
 	function linkCodeBlockToInvocation(codeBlock, invocation) {
 		codeBlock.invocations.push(invocation);
 	}
@@ -84,6 +93,62 @@ function getInstance(options) {
 		return Object.values(values);
 	}
 	self.getValues = getValues;
+
+	function findValue(obj) {
+		for (var i in values) {
+			if (values[i].equals(obj)) {
+				return values[i];
+			}
+		}
+	}
+	self.findValue = findValue;
+
+	function findReferencesTo(id) {
+		var groups = [codeBlocks, invocations, values];
+		var results = [];
+
+		for (var i=0; i<groups.length; i++) {
+			for (var index in groups[i]) {
+				results = results.concat(_findReferencesTo(id, groups[i][index], true));
+			}
+		}
+
+		return results;
+	}
+
+	function _findReferencesTo(id, all, topLevel) {
+		var result = [];
+		if (Array.isArray(all)) {
+			for (var i=0; i<all.length; i++) {
+				var tmpResult = _findReferencesTo(id, all[i], false);
+				result = result.concat(tmpResult);
+			}
+		} else if (typeof all === "object") {
+			if (all.id === id && !topLevel) {
+				result.push(true);
+			}
+
+			for (var index in all) {
+				var item = all[index];
+
+				if (item) {
+					tmpResult = _findReferencesTo(id, all[index], false);
+
+					if (tmpResult.indexOf(true) !== -1) {
+						if (all.id) {
+							result.push({parent: all, property: index});
+							tmpResult = tmpResult.filter(function (a) { return a !== true });
+						}
+					}
+
+					result = result.concat(tmpResult);
+				}
+			}
+		}
+		
+		return result;
+	}
+	self.findReferencesTo = findReferencesTo;
 
 	// INTERNAL
 	function generateId() {
