@@ -26,6 +26,22 @@ var ObjectStructure    = require("./classes/object-structure");
 var Reference          = require("./classes/reference");
 var Unknown            = require("./classes/unknown");
 
+var ALL_TYPE = {
+	ArrayStructure : ArrayStructure,
+	Concatenation : Concatenation,
+	Constant : Constant,
+	Context :  Context,
+	FunctionArgument : FunctionArgument,
+	FunctionCodeBlock : FunctionCodeBlock,
+	FunctionInvocation : FunctionInvocation,
+	GlobalFunctionCall : GlobalFunctionCall,
+	LocalFunctionCall : LocalFunctionCall,
+	MemberExpression : MemberExpression,
+	ObjectFunctionCall : ObjectFunctionCall,
+	ObjectStructure : ObjectStructure,
+	Reference : Reference,
+	Unknown : Unknown
+}
 
 /**
  * Storage & Query
@@ -54,6 +70,37 @@ exportFnct.clone = clone;
 /**
  * Analysis function
  */
+
+function reTypeValue(value) {
+	if (Array.isArray(value)) {
+		var res = [];
+		
+		for (var i=0; i<value.length; i++) {
+			res.push(reTypeValue(value[i]));
+		}
+
+		return res;
+	} else if (typeof value === "object") {
+		var res;
+
+		if (value.__type) {
+			var type = ALL_TYPE[value.__type];
+			res = Object.create(type.prototype);
+		} else {
+			res = {};
+		}
+
+		for (var i in value) {
+			res[i] = reTypeValue(value[i]);
+		}
+
+		return res;
+	} else {
+		return value;
+	}
+}
+
+exportFnct.reTypeValue = reTypeValue;
 
 /**
  * Returns the list of all the variable declaration in the scope of the 
@@ -511,18 +558,18 @@ function findExactCall(result, search) {
 
 exportFnct.findExactCall = findExactCall;
 
-function replaceArgumentsElements(source, replacement) {
-	if (source.__type === "FunctionArgument") {
+function replaceArgumentsElements(source, fnct, replacement) {
+	if (source.__type === "FunctionArgument" && source.fnct === fnct) {
 		return replacement[source.index];
 	}
 
 	if (Array.isArray(source)) {
 		for (var i=0; i<source.length; i++) {
-			source[i] = replaceArgumentsElements(source[i], replacement);
+			source[i] = replaceArgumentsElements(source[i], fnct, replacement);
 		}
 	} else if (typeof source === "object") {
 		for (var i in source) {
-			source[i] = replaceArgumentsElements(source[i], replacement);
+			source[i] = replaceArgumentsElements(source[i], fnct, replacement);
 		}
 	}
 
@@ -561,12 +608,21 @@ function getFunctionCall(value) {
 	return results;
 }
 
-function findInvocationsOf(result, elementId) {
-	if (!elementId) {
+function findInvocationsOf(result, element) {
+	if (!element) {
 		return [];
 	}
 
-	var refs = result.graph.findReferencesTo(elementId);
+	var refs = result.graph.findReferencesTo(element);
+
+	if (element.name) {
+		//console.log("Find ref : ", refs);
+		//console.log(element.name);
+		refs = refs.concat(result.graph.findReferencesTo(new Reference(element.name)));
+	}
+
+	//console.log("Element ", element);
+	//console.log("Find ref : ", refs);
 
 	for (var i=0; i<refs.length; i++) {
 		var ref = refs[i];
@@ -593,10 +649,10 @@ function findInvocationsOf(result, elementId) {
 					}
 
 					for (var j=0; j<parent.arguments.length; j++) {
-						if (parent.arguments[j].id === elementId) {
+						if (parent.arguments[j].id === element.id) {
 							for (var k=0; k<invokedFunction.length; k++) {
 								var fnctArgument = result.graph.findValue(new FunctionArgument(invokedFunction[k].name, "", j));
-								results = results.concat(findInvocationsOf(result, fnctArgument.id));
+								results = results.concat(findInvocationsOf(result, fnctArgument));
 							}
 						}
 					}
@@ -605,14 +661,16 @@ function findInvocationsOf(result, elementId) {
 				} else {
 					return [parent];
 				}
-				break;
+					break;
 
 			case "GlobalFunctionCall":
 				// Can't resolve those as we don't know what it points to :( 
 				break;
 
 			default:
-				return findInvocationsOf(result, parent.id);
+				// When the function is an attribute of something else, we must find where
+				// this something else is used.
+				return findInvocationsOf(result, parent);
 				break;
 		}
 	}
@@ -640,17 +698,17 @@ function resolveValues(result, values) {
 
 		var nextFunction = argsPriority[0].fnct;
 		var codeBlock = result.graph.findCodeBlock(nextFunction);
-
-		var invocations = findInvocationsOf(result, codeBlock.id);
+		var invocations = findInvocationsOf(result, codeBlock);
 		var possibleResults = [];
 
 		for (var i=0; i<invocations.length; i++) {
 			var newValues = clone(values);
 
 			for (var j=0; j<newValues.length; j++) {
-				newValues[j] = replaceArgumentsElements(newValues[j], invocations[i].arguments);	
+				newValues[j] = replaceArgumentsElements(newValues[j], nextFunction, invocations[i].arguments);	
 			}
 
+			newValues = reTypeValue(newValues);
 			possibleResults = possibleResults.concat(newValues);
 		}
 
@@ -659,7 +717,7 @@ function resolveValues(result, values) {
 
 	var call = [];
 	for (var i=0; i<values.length; i++) {
-		call = call.concat(getFunctionArguments(values));
+		call = call.concat(getFunctionCall(values));
 	}
 
 	if (call.length > 0) {

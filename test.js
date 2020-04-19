@@ -23,7 +23,7 @@ console.log(astring.generate(tree));
 
 var result = utils.analysis(tree, new Context(graphInst));
 
-/*
+
 console.log("");
 console.log("Code-block list =====");
 console.log(util.inspect(result.graph.getCodeBlocks(), { depth: null }));
@@ -35,9 +35,13 @@ console.log(util.inspect(result.graph.getInvocations(), { depth: null }));
 console.log("");
 console.log("List of values =====");
 console.log(util.inspect(result.graph.getValues(), { depth: null }));
-*/
+
 
 //console.log("");
+console.log("Analyzed code :");
+console.log(code.toString());
+console.log("");
+
 console.log("Possible symbolic of the 1st argument of 'eval' : ");
 
 var invocations = utils.findExactCall(result, new Reference("G&&&eval"));

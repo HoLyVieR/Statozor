@@ -103,36 +103,38 @@ function getInstance(options) {
 	}
 	self.findValue = findValue;
 
-	function findReferencesTo(id) {
+	function findReferencesTo(element) {
 		var groups = [codeBlocks, invocations, values];
 		var results = [];
 
 		for (var i=0; i<groups.length; i++) {
 			for (var index in groups[i]) {
-				results = results.concat(_findReferencesTo(id, groups[i][index], true));
+				results = results.concat(_findReferencesTo(element, groups[i][index], true));
 			}
 		}
 
 		return results;
 	}
 
-	function _findReferencesTo(id, all, topLevel) {
+	function _findReferencesTo(element, all, topLevel) {
 		var result = [];
 		if (Array.isArray(all)) {
 			for (var i=0; i<all.length; i++) {
-				var tmpResult = _findReferencesTo(id, all[i], false);
+				var tmpResult = _findReferencesTo(element, all[i], false);
 				result = result.concat(tmpResult);
 			}
 		} else if (typeof all === "object") {
-			if (all.id === id && !topLevel) {
-				result.push(true);
+			if (!topLevel) {
+				if ((element.id && all.id === element.id) || element.equals(all)) {
+					result.push(true);
+				}
 			}
 
 			for (var index in all) {
 				var item = all[index];
 
 				if (item) {
-					tmpResult = _findReferencesTo(id, all[index], false);
+					tmpResult = _findReferencesTo(element, all[index], false);
 
 					if (tmpResult.indexOf(true) !== -1) {
 						if (all.id) {
@@ -145,7 +147,7 @@ function getInstance(options) {
 				}
 			}
 		}
-		
+
 		return result;
 	}
 	self.findReferencesTo = findReferencesTo;
