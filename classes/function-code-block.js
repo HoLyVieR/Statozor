@@ -3,6 +3,7 @@
 function FunctionCodeBlock(name) {
 	this.name = name;
 	this.invocations = [];
+	this.returns = [];
 }
 
 FunctionCodeBlock.prototype.equals = function (val) {

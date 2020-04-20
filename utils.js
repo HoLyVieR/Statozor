@@ -1,5 +1,7 @@
 var exportFnct = {};
 
+var _ = require('lodash');
+
 /**
  * Constant
  */
@@ -62,7 +64,8 @@ function debug(message) {
 exportFnct.debug = debug;
 
 function clone(obj) {
-	return JSON.parse(JSON.stringify(obj));
+	//return JSON.parse(JSON.stringify(obj));
+	return _.cloneDeep(obj);
 }
 
 exportFnct.clone = clone;
@@ -576,6 +579,24 @@ function replaceArgumentsElements(source, fnct, replacement) {
 	return source;
 }
 
+function replaceElements(source, findWhat, replacement) {
+	if (findWhat.equals(source)) {
+		return replacement;
+	}
+
+	if (Array.isArray(source)) {
+		for (var i=0; i<source.length; i++) {
+			source[i] = replaceElements(source[i], findWhat, replacement);
+		}
+	} else if (typeof source === "object") {
+		for (var i in source) {
+			source[i] = replaceElements(source[i], findWhat, replacement);
+		}
+	}
+
+	return source;
+}
+
 function findObjectType(value, type) {
 	var results = [];
 
@@ -616,13 +637,8 @@ function findInvocationsOf(result, element) {
 	var refs = result.graph.findReferencesTo(element);
 
 	if (element.name) {
-		//console.log("Find ref : ", refs);
-		//console.log(element.name);
 		refs = refs.concat(result.graph.findReferencesTo(new Reference(element.name)));
 	}
-
-	//console.log("Element ", element);
-	//console.log("Find ref : ", refs);
 
 	for (var i=0; i<refs.length; i++) {
 		var ref = refs[i];
@@ -720,8 +736,40 @@ function resolveValues(result, values) {
 		call = call.concat(getFunctionCall(values));
 	}
 
+	// If there are function call to resolve
 	if (call.length > 0) {
+		var possibleResults = [];
 
+		for (var i=0; i<call.length; i++) {
+			var whatsCalled = call[i].reference || call[i].fnct;
+			var possibleTarget;
+
+			if (!(whatsCalled instanceof Reference)) {
+				possibleTarget = resolveValues(result, [whatsCalled]);
+			} else {
+				possibleTarget = [whatsCalled];
+			}
+
+			for (var j=0; j<possibleTarget.length; j++) {
+				// If we can't figure out what a call points to, we keep 
+				// the symbolic value as it is.
+				if (possibleTarget[j] instanceof Reference) {
+					var codeBlock = result.graph.findCodeBlock(possibleTarget[j].name);
+					
+					for (var k=0; k<codeBlock.returns.length; k++) {
+						var newValues = clone(values);
+
+						for (var l=0; l<newValues.length; l++) {
+							newValues[l] = replaceElements(newValues[l], call[i], codeBlock.returns[k]);
+						}
+
+						possibleResults = possibleResults.concat(newValues);
+					}
+				}
+			}
+		}
+
+		return resolveValues(result, possibleResults);
 	}
 
 	return values;
@@ -885,6 +933,7 @@ function analysis(tree, context, partialScope, useNewScope) {
 			case "ReturnStatement":
 				var newContext = context.clone();
 				newContext.scope = newScope;
+				context.codeBlock.returns.push(toSymbolic(element.argument, context));
 				analysis({ body : [element.argument] }, newContext, true, false);
 				break;
 
