@@ -12,13 +12,31 @@ ComplexValue.prototype.toHumanValue = function () {
 };
 
 ComplexValue.prototype.addConstant = function (constant) {
-	if (this.constants.indexOf(constant) === -1) {
+	var found = false;
+
+	for (var i=0; i<this.constants.length; i++) {
+		if (this.constants[i].equals(constant)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
 		this.constants.push(constant);
 	}
 };
 
 ComplexValue.prototype.addVariable = function (variable) {
-	if (this.variables.indexOf(variable) === -1) {
+	var found = false;
+	
+	for (var i=0; i<this.variables.length; i++) {
+		if (this.variables[i].equals(variable)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
 		this.variables.push(variable);
 	}
 };

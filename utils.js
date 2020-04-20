@@ -72,6 +72,26 @@ function clone(obj) {
 
 exportFnct.clone = clone;
 
+function getCircularReplacer() {
+  const seen = new WeakSet();
+
+  return function (key, value) {
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+    }
+    return value;
+  };
+}
+
+function uniqueKey(obj) {
+	return JSON.stringify(obj, getCircularReplacer());
+}
+
+exportFnct.uniqueKey = uniqueKey;
+
 /**
  * Analysis function
  */
@@ -115,7 +135,7 @@ exportFnct.reTypeValue = reTypeValue;
  * @param collectVar - If we collect variable declared with "var".
  * @param collectLet - If we collect variable declared with "let".
  */
-function collectVar(tree, _collectVar, collectLet) {
+function collectVar(tree, _collectVar, collectLet, collectFunction) {
 	var variables = [];
 
 	if (!tree) {
@@ -127,6 +147,7 @@ function collectVar(tree, _collectVar, collectLet) {
 	}
 
 	if (!Array.isArray(tree.body)) {
+		tree = clone(tree);
 		tree.body = [tree.body];
 
 		if (tree[0] && tree[0].synthetic) {
@@ -145,16 +166,18 @@ function collectVar(tree, _collectVar, collectLet) {
 
 			for (let j=0; j<statement.declarations.length; j++) {
 				variables.push(statement.declarations[j].id.name);
-				variables = variables.concat(collectVar(statement.declarations[j], true, false));
+				variables = variables.concat(collectVar(statement.declarations[j], true, false, collectFunction));
 			}
 		} else if (statement.body && !statementIsFunction && _collectVar) {
-			variables = variables.concat(collectVar(statement, true, false));
+			variables = variables.concat(collectVar(statement, true, false, collectFunction));
 		} else if (statementIsFunction && _collectVar) {
-			variables.push(statement.id.name);
+			if (collectFunction) {
+				variables.push(statement.id.name);
+			}
 		} else if (!statementIsFunction && _collectVar) {
 			for (var prop in statement) {
 				if (statement.hasOwnProperty(prop) && typeof statement[prop] === "object") {
-					variables = variables.concat(collectVar(statement[prop], true, false));
+					variables = variables.concat(collectVar(statement[prop], true, false, collectFunction));
 				}
 			}
 		}
@@ -564,6 +587,10 @@ function findExactCall(result, search) {
 exportFnct.findExactCall = findExactCall;
 
 function replaceArgumentsElements(source, fnct, replacement) {
+	if (!source) {
+		return source;
+	}
+
 	if (source.__type === "FunctionArgument" && source.fnct === fnct) {
 		return replacement[source.index];
 	}
@@ -574,8 +601,11 @@ function replaceArgumentsElements(source, fnct, replacement) {
 		}
 	} else if (typeof source === "object") {
 		if (source instanceof ComplexValue) {
-			var temp = convertToComplexValue(replaceArgumentsElements(source.variables, fnct, replacement));
-			source.merge(temp);
+			for (var i=0; i<source.variables.length; i++) {
+				var temp = convertToComplexValue(replaceArgumentsElements(source.variables[i], fnct, replacement));
+				source.merge(temp);
+			}
+
 			return source;
 		}
 
@@ -612,6 +642,20 @@ function replaceElements(source, findWhat, replacement) {
 }
 
 function findObjectType(value, type) {
+	return _findObjectType(value, type, {});
+}
+
+function _findObjectType(value, type, traversed) {
+	if (!value) {
+		return [];
+	}
+
+	var key = uniqueKey(value);
+	if (traversed[key]) {
+		return [];
+	}
+	traversed[key] = true;
+
 	var results = [];
 
 	if (value instanceof type) {
@@ -620,11 +664,11 @@ function findObjectType(value, type) {
 
 	if (Array.isArray(value)) {
 		for (var i=0; i<value.length; i++) {
-			results = results.concat(findObjectType(value[i], type));
+			results = results.concat(_findObjectType(value[i], type, traversed));
 		}
 	} else if (typeof value === "object") {
 		for (var i in value) {
-			results = results.concat(findObjectType(value[i], type));
+			results = results.concat(_findObjectType(value[i], type, traversed));
 		}
 	}
 
@@ -651,8 +695,25 @@ function findInvocationsOf(result, element) {
 	var refs = result.graph.findReferencesTo(element);
 
 	if (element.name) {
-		refs = refs.concat(result.graph.findReferencesTo(new Reference(element.name)));
+		var tmp = result.graph.findReferencesTo(new Reference(element.name));
+
+		for (var i=0; i<tmp.length; i++) {
+			var good = true;
+			
+			for (var j=0; j<refs.length; j++) {
+				if (refs[j].parent.equals(tmp[i].parent)) {
+					good = false;
+					break;
+				}
+			}
+
+			if (good) {
+				refs.push(tmp[i]);
+			}
+		}
 	}
+
+	var results = [];
 
 	for (var i=0; i<refs.length; i++) {
 		var ref = refs[i];
@@ -664,7 +725,6 @@ function findInvocationsOf(result, element) {
 			case "LocalFunctionCall":
 				if (property === "arguments") {
 					var invokedFunction = parent.reference || parent.fnct;
-					var results = [];
 
 					if (invokedFunction instanceof Reference) {
 						invokedFunction = [invokedFunction];
@@ -686,12 +746,10 @@ function findInvocationsOf(result, element) {
 							}
 						}
 					}
-
-					return results;
 				} else {
-					return [parent];
+					results.push(parent);
 				}
-					break;
+				break;
 
 			case "GlobalFunctionCall":
 				// Can't resolve those as we don't know what it points to :( 
@@ -700,12 +758,12 @@ function findInvocationsOf(result, element) {
 			default:
 				// When the function is an attribute of something else, we must find where
 				// this something else is used.
-				return findInvocationsOf(result, parent);
+				results = results.concat(findInvocationsOf(result, parent));
 				break;
 		}
 	}
 
-	return [];
+	return results;
 }
 
 exportFnct.findInvocationsOf = findInvocationsOf;
@@ -730,14 +788,7 @@ function resolveValues(result, values) {
 }
 
 function _resolveValues(result, values, states) {
-	var key = JSON.stringify(values);
-
-	// We have reached a fixed-point where we will no longer get results that are more precise
-	if (states[key]) {
-		return values;
-	}
-
-	states[key] = true;
+	var key = uniqueKey(values);
 
 	var args = [];
 	for (var i=0; i<values.length; i++) {
@@ -745,7 +796,12 @@ function _resolveValues(result, values, states) {
 	}
 
 	// If there are parameters to resolve
-	if (args.length > 0) {
+	if (args.length > 0 
+			// We have reached a fixed-point where we will no longer get results that are more precise
+			&& !states[key + "-args"]) {
+
+		states[key + "-args"] = true;
+
 		var argsPriority = args.sort(function (functionArgA, functionArgB) {
 			var valueA = functionArgA.fnct.split(CONST_SEPARATOR_ID).length;
 			var valueB = functionArgB.fnct.split(CONST_SEPARATOR_ID).length;
@@ -754,30 +810,44 @@ function _resolveValues(result, values, states) {
 			return valueB - valueA;
 		});
 
-		var nextFunction = argsPriority[0].fnct;
-		var codeBlock = result.graph.findCodeBlock(nextFunction);
-		var invocations = findInvocationsOf(result, codeBlock);
-		var possibleResults = [];
+		var alreadyDoneFnct = {};
+		for (var n=0; n<argsPriority.length; n++) {
+			var nextFunction = argsPriority[n].fnct;
 
-		for (var i=0; i<invocations.length; i++) {
-			var newValues = clone(values);
-
-			for (var j=0; j<newValues.length; j++) {
-				var newValue = replaceArgumentsElements(newValues[j], nextFunction, invocations[i].arguments);
-				var found = false;
-
-				newValue = applyWidening(newValue);
-
-				for (var m=0; m<possibleResults.length; m++) {
-					if (possibleResults[m].equals(newValue)) {
-						found = true;
-					}
-				}
-
-				if (!found) { 
-					possibleResults.push(newValue);
-				}	
+			if (alreadyDoneFnct[nextFunction]) {
+				continue;
 			}
+
+			alreadyDoneFnct[nextFunction] = true;
+
+			var codeBlock = result.graph.findCodeBlock(nextFunction);
+			var invocations = findInvocationsOf(result, codeBlock);
+			var possibleResults = [];
+
+			for (var i=0; i<invocations.length; i++) {
+				var newValues = clone(values);
+
+				for (var j=0; j<newValues.length; j++) {
+					var newValue = replaceArgumentsElements(newValues[j], nextFunction, invocations[i].arguments);
+					var found = false;
+
+					newValue = applyWidening(newValue);
+
+					for (var m=0; m<possibleResults.length; m++) {
+						if (possibleResults[m].equals(newValue)) {
+							found = true;
+						}
+					}
+
+					if (!found) { 
+						possibleResults.push(newValue);
+					}	
+				}
+			}
+		}
+
+		if (possibleResults.length == 0) {
+			possibleResults = values;
 		}
 
 		return _resolveValues(result, possibleResults, states);
@@ -785,12 +855,32 @@ function _resolveValues(result, values, states) {
 
 	var call = [];
 	for (var i=0; i<values.length; i++) {
-		call = call.concat(getFunctionCall(values));
+		var tmp = getFunctionCall(values);
+		
+		for (var j=0; j<tmp.length; j++) {
+			var good = true;
+			
+			for (var k=0; k<call.length; k++) {
+				if (call[k].equals(tmp[j])) {
+					good = false;
+					break;
+				}
+			}
+
+			if (good) {
+				call.push(tmp[j]);
+			}
+		}
 	}
 
 	// If there are function call to resolve
-	if (call.length > 0) {
-		var possibleResults = [];
+	if (call.length > 0
+			// We have reached a fixed-point where we will no longer get results that are more precise
+			&& !states[key + "-call"]) {
+
+		states[key + "-call"] = true;
+
+		var possibleResults = values;
 
 		for (var i=0; i<call.length; i++) {
 			var whatsCalled = call[i].reference || call[i].fnct;
@@ -808,23 +898,25 @@ function _resolveValues(result, values, states) {
 				if (possibleTarget[j] instanceof Reference) {
 					var codeBlock = result.graph.findCodeBlock(possibleTarget[j].name);
 					
-					for (var k=0; k<codeBlock.returns.length; k++) {
-						var newValues = clone(values);
+					if (codeBlock) {
+						for (var k=0; k<codeBlock.returns.length; k++) {
+							var newValues = clone(values);
 
-						for (var l=0; l<newValues.length; l++) {
-							var newValue = replaceElements(newValues[l], call[i], codeBlock.returns[k]);
-							var found = false;
+							for (var l=0; l<newValues.length; l++) {
+								var newValue = replaceElements(newValues[l], call[i], codeBlock.returns[k]);
+								var found = false;
 
-							newValue = applyWidening(newValue);
+								newValue = applyWidening(newValue);
 
-							for (var m=0; m<possibleResults.length; m++) {
-								if (possibleResults[m].equals(newValue)) {
-									found = true;
+								for (var m=0; m<possibleResults.length; m++) {
+									if (possibleResults[m].equals(newValue)) {
+										found = true;
+									}
 								}
-							}
 
-							if (!found) { 
-								possibleResults.push(newValue);
+								if (!found) { 
+									possibleResults.push(newValue);
+								}
 							}
 						}
 					}
@@ -832,6 +924,10 @@ function _resolveValues(result, values, states) {
 			}
 		}
 
+		if (possibleResults.length == 0) {
+			possibleResults = values;
+		}
+		
 		return _resolveValues(result, possibleResults, states);
 	}
 
@@ -901,7 +997,7 @@ function analysis(tree, context, partialScope, useNewScope) {
 
 	if (useNewScope) {
 		var newScope = new Map(scope);
-		var listVar  = collectVar(tree, !partialScope, true);
+		var listVar  = collectVar(tree, !partialScope, true, true);
 
 		for (let i=0; i<listVar.length; i++) {
 			let variableName = listVar[i];
@@ -958,7 +1054,7 @@ function analysis(tree, context, partialScope, useNewScope) {
 						"type" : "BinaryExpression",
 						"start" : element.start,
 						"end" : element.end,
-						"left" : element.left,
+						"left" : clone(element.left),
 						"operator" : element.operator[0],
 						"right" : element.right
 					};
@@ -967,7 +1063,7 @@ function analysis(tree, context, partialScope, useNewScope) {
 				}
 
 				let symbolicLeft = toSymbolic(element.left, context, false);
-				let symbolicRight = toSymbolic(element.right, context);
+				let symbolicRight = toSymbolic(element.right, context, false);
 
 				if (symbolicLeft instanceof Reference) {
 					context.assignations.set(symbolicLeft.name, symbolicRight);
@@ -1004,8 +1100,7 @@ function analysis(tree, context, partialScope, useNewScope) {
 				if (element.body) {
 					var newContext = context.clone();
 					newContext.scope = newScope;
-					newContext.scopeName = scopeName + "LS" + i + CONST_SEPARATOR_ID;
-					analysis(element, newContext, true, true);
+					analysis(element, newContext, true, false);
 				}
 				break;
 		}
@@ -1052,9 +1147,17 @@ function createFunctionFromCodeBlock(tree, params) {
 			"type" : "Identifier",
 			"name" : "sub" + (Math.random().toString(16).substr(2))
 		},
-		params : params || [],
+		params : params ? params.map(createIdentifier) : [],
 		body : expr
 	};
+}
+
+function createIdentifier(name) {
+	var expr = {
+		"type" : "Identifier",
+		"name" : name
+	};
+	return expr;
 }
 
 function createFunctionInvocation(functionName, params) {
@@ -1064,7 +1167,7 @@ function createFunctionInvocation(functionName, params) {
 			type : "Identifier",
 			name : functionName
 		},
-		arguments : params || []
+		arguments : params ? params.map(createIdentifier) : []
 	};
 }
 
@@ -1163,9 +1266,13 @@ function replaceBreakStatement(tree, astReplacement) {
  * 
  * @param tree AST tree
  */
-function divideElementaryCodeBlock(tree, parent) {
+function divideElementaryCodeBlock(tree, parent, parentFunction, fake) {
 	if (!parent) {
 		parent = tree;
+	}
+
+	if (!parentFunction) {
+		parentFunction = parent;
 	}
 
 	if (!tree || typeof tree === "string" || typeof tree === "number") {
@@ -1174,7 +1281,7 @@ function divideElementaryCodeBlock(tree, parent) {
 
 	if (Array.isArray(tree)) {
 		for (let i=0; i<tree.length; i++) {
-			divideElementaryCodeBlock(tree[i], parent);
+			divideElementaryCodeBlock(tree[i], parent, parentFunction);
 		}
 		return;
 	}
@@ -1185,39 +1292,47 @@ function divideElementaryCodeBlock(tree, parent) {
 		newParent = parent;
 	}
 
+	if (!fake && (tree.type === "FunctionDeclaration" || tree.type === "FunctionExpression")) {
+		newParentFunction = tree;
+	} else {
+		newParentFunction = parentFunction;
+	}
+
+	var listVariables = collectVar(parentFunction, true, false, false);
+
 	switch (tree.type) {
 		case "IfStatement":
-			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
-			var ifTrue = createFunctionFromCodeBlock(tree.consequent); 
-			var ifFalse = createFunctionFromCodeBlock(tree.alternate || createEmptyExpression());
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent), listVariables);
+			var ifTrue = createFunctionFromCodeBlock(tree.consequent, listVariables); 
+			var ifFalse = createFunctionFromCodeBlock(tree.alternate || createEmptyExpression(), listVariables);
 
 			parent.body.pop();
 			parent.body.push(ifTrue);
 			parent.body.push(ifFalse);
 			parent.body.push(fnctAfter);
 
-			ifTrue.body.body[0].body.push(createReturnValue(createFunctionInvocation(fnctAfter.id.name)));
-			ifFalse.body.body[0].body.push(createReturnValue(createFunctionInvocation(fnctAfter.id.name)));
+			ifTrue.body.body[0].body.push(createReturnValue(createFunctionInvocation(fnctAfter.id.name, listVariables)));
+			ifFalse.body.body[0].body.push(createReturnValue(createFunctionInvocation(fnctAfter.id.name, listVariables)));
 
-			var fnctInvoTrue = createFunctionInvocation(ifTrue.id.name);
-			var fnctInvoFalse = createFunctionInvocation(ifFalse.id.name);
+			var fnctInvoTrue = createFunctionInvocation(ifTrue.id.name, listVariables);
+			var fnctInvoFalse = createFunctionInvocation(ifFalse.id.name, listVariables);
 			fnctInvoTrue.condition = tree.test;
 			fnctInvoFalse.condition = createNotValue(tree.test);
 			parent.body.push(createReturnValue(fnctInvoTrue));
 			parent.body.push(createReturnValue(fnctInvoFalse));
 
 			if (tree.alternate) {
-				divideElementaryCodeBlock(ifFalse);
+				divideElementaryCodeBlock(ifFalse, newParent, newParentFunction, true);
 			}
 
-			divideElementaryCodeBlock(ifTrue);
-			divideElementaryCodeBlock(fnctAfter);
+			divideElementaryCodeBlock(ifTrue, newParent, newParentFunction, true);
+			divideElementaryCodeBlock(fnctAfter, newParent, newParentFunction, true);
 			break;
 
 		case "ForStatement":
-			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
-			var mainLoop = createFunctionFromCodeBlock(tree.body);
-			var initBlock = createFunctionFromCodeBlock(tree.init);
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent), listVariables);
+			var mainLoop = createFunctionFromCodeBlock(tree.body, listVariables);
+			var initBlock = createFunctionFromCodeBlock(tree.init, listVariables);
 
 			parent.body.pop();
 			parent.body.push(mainLoop);
@@ -1226,65 +1341,65 @@ function divideElementaryCodeBlock(tree, parent) {
 
 			mainLoop.body.body = mainLoop.body.body.concat(wrapInExpression(tree.update));
 			mainLoop.body.body.synthetic = true;
-			parent.body.push(createReturnValue(createFunctionInvocation(initBlock.id.name)));
+			parent.body.push(createReturnValue(createFunctionInvocation(initBlock.id.name, listVariables)));
 
-			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
-			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name);
+			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name, listVariables);
+			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name, listVariables);
 			fnctInvoMain.condition = tree.test;
 			fnctInvoExit.condition = createNotValue(tree.test);
 
 			initBlock.body.body.push(createReturnValue(fnctInvoMain));
 			initBlock.body.body.push(createReturnValue(fnctInvoExit));
-			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
-			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
+			mainLoop.body.body.push(createReturnValue(clone(fnctInvoMain)));
+			mainLoop.body.body.push(createReturnValue(clone(fnctInvoExit)));
 
-			divideElementaryCodeBlock(initBlock);
-			divideElementaryCodeBlock(mainLoop);
-			divideElementaryCodeBlock(fnctAfter);
+			divideElementaryCodeBlock(initBlock, newParent, newParentFunction, true);
+			divideElementaryCodeBlock(mainLoop, newParent, newParentFunction, true);
+			divideElementaryCodeBlock(fnctAfter, newParent, newParentFunction, true);
 			break;
 
 		case "DoWhileStatement":
-			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
-			var mainLoop = createFunctionFromCodeBlock(tree.body);
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent), listVariables);
+			var mainLoop = createFunctionFromCodeBlock(tree.body, listVariables);
 
 			parent.body.pop();
 			parent.body.push(mainLoop);
 			parent.body.push(fnctAfter);
 
-			parent.body.push(createReturnValue(createFunctionInvocation(mainLoop.id.name)));
+			parent.body.push(createReturnValue(createFunctionInvocation(mainLoop.id.name, listVariables)));
 
-			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
-			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name);
+			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name, listVariables);
+			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name, listVariables);
 			fnctInvoMain.condition = tree.test;
 			fnctInvoExit.condition = createNotValue(tree.test);
 			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
 			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
 
-			divideElementaryCodeBlock(mainLoop);
-			divideElementaryCodeBlock(fnctAfter);
+			divideElementaryCodeBlock(mainLoop, newParent, newParentFunction, true);
+			divideElementaryCodeBlock(fnctAfter, newParent, newParentFunction, true);
 			break;
 
 		case "WhileStatement":
-			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
-			var mainLoop = createFunctionFromCodeBlock(tree.body);
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent), listVariables);
+			var mainLoop = createFunctionFromCodeBlock(tree.body, listVariables);
 
 			parent.body.pop();
 			parent.body.push(mainLoop);
 			parent.body.push(fnctAfter);
 
-			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name);
-			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name);
+			var fnctInvoMain = createFunctionInvocation(mainLoop.id.name, listVariables);
+			var fnctInvoExit = createFunctionInvocation(fnctAfter.id.name, listVariables);
 			fnctInvoMain.condition = tree.test;
 			fnctInvoExit.condition = createNotValue(tree.test);
 
 			parent.body.push(createReturnValue(fnctInvoMain));
 			parent.body.push(createReturnValue(fnctInvoExit));
 
-			mainLoop.body.body.push(createReturnValue(fnctInvoMain));
-			mainLoop.body.body.push(createReturnValue(fnctInvoExit));
+			mainLoop.body.body.push(createReturnValue(clone(fnctInvoMain)));
+			mainLoop.body.body.push(createReturnValue(clone(fnctInvoExit)));
 
-			divideElementaryCodeBlock(mainLoop);
-			divideElementaryCodeBlock(fnctAfter);
+			divideElementaryCodeBlock(mainLoop, newParent, newParentFunction, true);
+			divideElementaryCodeBlock(fnctAfter, newParent, newParentFunction, true);
 			break;
 
 		case "SwitchStatement":
@@ -1293,9 +1408,9 @@ function divideElementaryCodeBlock(tree, parent) {
 				break;
 			}
 
-			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent));
+			var fnctAfter = createFunctionFromCodeBlock(spliceCodeBlock(tree, parent), listVariables);
 			var discriminant = tree.discriminant;
-			var returnToEnd = createReturnValue(createFunctionInvocation(fnctAfter.id.name));
+			var returnToEnd = createReturnValue(createFunctionInvocation(fnctAfter.id.name, listVariables));
 
 			parent.body.pop();
 			parent.body.push(fnctAfter);
@@ -1305,14 +1420,14 @@ function divideElementaryCodeBlock(tree, parent) {
 
 			for (var i=0; i<tree.cases.length; i++) {
 				var switchCase = tree.cases[i];
-				var codeBlockCase = createFunctionFromCodeBlock(switchCase.consequent);
+				var codeBlockCase = createFunctionFromCodeBlock(switchCase.consequent, listVariables);
 				parent.body.push(codeBlockCase);
 
 				if (previousFunction) {
-					previousFunction.body.body.push(createReturnValue(createFunctionInvocation(codeBlockCase.id.name)));
+					previousFunction.body.body.push(createReturnValue(createFunctionInvocation(codeBlockCase.id.name, listVariables)));
 				}
 
-				var fnctInvoCase = createFunctionInvocation(codeBlockCase.id.name);
+				var fnctInvoCase = createFunctionInvocation(codeBlockCase.id.name, listVariables);
 
 				if (switchCase.test != null) {
 					fnctInvoCase.condition = createEqualityExpression(discriminant, switchCase.test);
@@ -1344,7 +1459,7 @@ function divideElementaryCodeBlock(tree, parent) {
 			}
 
 			for (var i=0; i<accumulatedCases.length; i++) {
-				divideElementaryCodeBlock(accumulatedCases[i]);
+				divideElementaryCodeBlock(accumulatedCases[i], newParent, newParentFunction, true);
 			}
 
 			break;
@@ -1366,7 +1481,7 @@ function divideElementaryCodeBlock(tree, parent) {
 
 			for (let prop in tree) {
 				if (tree.hasOwnProperty(prop)) {
-					divideElementaryCodeBlock(tree[prop], newParent);
+					divideElementaryCodeBlock(tree[prop], newParent, newParentFunction);
 				}
 			}
 			break;

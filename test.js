@@ -16,12 +16,14 @@ var tree = acorn.parse(code);
 
 utils.preAnalysis(tree);
 
+/*
 console.log("Pre-analysis code =====");
 console.log(astring.generate(tree));
+*/
 
 var result = utils.analysis(tree, new Context(graphInst));
 
-
+/*
 console.log("");
 console.log("Code-block list =====");
 console.log(util.inspect(result.graph.getCodeBlocks(), { depth: null }));
@@ -33,7 +35,7 @@ console.log(util.inspect(result.graph.getInvocations(), { depth: null }));
 console.log("");
 console.log("List of values =====");
 console.log(util.inspect(result.graph.getValues(), { depth: null }));
-
+*/
 
 //console.log("");
 console.log("Analyzed code :");
@@ -51,5 +53,3 @@ for (var i=0; i<invocations.length; i++) {
 		console.log("Possible value : " + values[j].toHumanValue());
 	}
 }
-
-//console.log(util.inspect(acorn.parse("if (1) { }")))

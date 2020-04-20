@@ -109,7 +109,21 @@ function getInstance(options) {
 
 		for (var i=0; i<groups.length; i++) {
 			for (var index in groups[i]) {
-				results = results.concat(_findReferencesTo(element, groups[i][index], true));
+				var tmp = _findReferencesTo(element, groups[i][index], true);
+
+				for (var j=0; j<tmp.length; j++) {
+					var good = true;
+
+					for (var k=0; k<results.length; k++) {
+						if (results[k].parent.equals(tmp[j].parent)) {
+							good = false;
+						}
+					}
+
+					if (good) {
+						results.push(tmp[j]);
+					}
+				}
 			}
 		}
 

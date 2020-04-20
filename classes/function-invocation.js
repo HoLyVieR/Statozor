@@ -3,6 +3,7 @@
 function FunctionInvocation() {
 	this.fnct = null;
 	this.arguments = [];
+	this.condition = null;
 }
 
 FunctionInvocation.prototype.equals = function (val) {
@@ -21,6 +22,10 @@ FunctionInvocation.prototype.equals = function (val) {
 	if (this.arguments.length !== val.arguments.length) {
 		return false;
 	}
+
+	/*if (this.condition !== val.condition) {
+		return false;
+	}*/
 
 	var good = true;
 

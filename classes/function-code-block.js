@@ -18,6 +18,8 @@ FunctionCodeBlock.prototype.equals = function (val) {
 	if (this.name !== val.name) {
 		return false;
 	}
+
+	return true;
 }
 
 FunctionCodeBlock.prototype.size = function () {
