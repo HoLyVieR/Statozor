@@ -7,6 +7,10 @@ function FunctionCodeBlock(name) {
 }
 
 FunctionCodeBlock.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "FunctionCodeBlock") {
 		return false;
 	}

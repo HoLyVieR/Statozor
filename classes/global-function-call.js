@@ -26,6 +26,10 @@ GlobalFunctionCall.prototype.toHumanValue = function () {
 }
 
 GlobalFunctionCall.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "GlobalFunctionCall") {
 		return false;
 	}

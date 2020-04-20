@@ -9,6 +9,10 @@ ArrayStructure.prototype.toHumanValue = function () {
 };
 
 ArrayStructure.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "ArrayStructure") {
 		return false;
 	}

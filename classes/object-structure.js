@@ -14,6 +14,10 @@ ObjectStructure.prototype.toHumanValue = function () {
 };
 
 ObjectStructure.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "ObjectStructure") {
 		return false;
 	}

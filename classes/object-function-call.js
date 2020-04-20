@@ -16,6 +16,10 @@ ObjectFunctionCall.prototype.toHumanValue = function () {
 };
 
 ObjectFunctionCall.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "ObjectFunctionCall") {
 		return false;
 	}

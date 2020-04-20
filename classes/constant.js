@@ -9,6 +9,10 @@ Constant.prototype.toHumanValue = function () {
 }
 
 Constant.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "Constant") {
 		return false;
 	}

@@ -16,10 +16,8 @@ var tree = acorn.parse(code);
 
 utils.preAnalysis(tree);
 
-/*
 console.log("Pre-analysis code =====");
 console.log(astring.generate(tree));
-*/
 
 var result = utils.analysis(tree, new Context(graphInst));
 

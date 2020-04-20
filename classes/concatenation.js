@@ -23,6 +23,10 @@ Concatenation.prototype.toHumanValue = function () {
 }
 
 Concatenation.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "Concatenation") {
 		return false;
 	}

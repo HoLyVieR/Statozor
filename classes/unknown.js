@@ -9,6 +9,10 @@ Unknown.prototype.toHumanValue = function () {
 }
 
 Unknown.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "Unknown") {
 		return false;
 	}

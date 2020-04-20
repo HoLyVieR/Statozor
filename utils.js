@@ -697,6 +697,19 @@ function findInvocationsOf(result, element) {
 exportFnct.findInvocationsOf = findInvocationsOf;
 
 function resolveValues(result, values) {
+	return _resolveValues(result, values, {});
+}
+
+function _resolveValues(result, values, states) {
+	var key = JSON.stringify(values);
+
+	// We have reached a fixed-point where we will no longer get results that are more precise
+	if (states[key]) {
+		return values;
+	}
+
+	states[key] = true;
+
 	var args = [];
 	for (var i=0; i<values.length; i++) {
 		args = args.concat(getFunctionArguments(values));
@@ -728,7 +741,7 @@ function resolveValues(result, values) {
 			possibleResults = possibleResults.concat(newValues);
 		}
 
-		return resolveValues(result, possibleResults);
+		return _resolveValues(result, possibleResults, states);
 	}
 
 	var call = [];
@@ -745,7 +758,7 @@ function resolveValues(result, values) {
 			var possibleTarget;
 
 			if (!(whatsCalled instanceof Reference)) {
-				possibleTarget = resolveValues(result, [whatsCalled]);
+				possibleTarget = _resolveValues(result, [whatsCalled], states);
 			} else {
 				possibleTarget = [whatsCalled];
 			}
@@ -760,16 +773,25 @@ function resolveValues(result, values) {
 						var newValues = clone(values);
 
 						for (var l=0; l<newValues.length; l++) {
-							newValues[l] = replaceElements(newValues[l], call[i], codeBlock.returns[k]);
-						}
+							var newValue = replaceElements(newValues[l], call[i], codeBlock.returns[k]);
+							var found = false;
 
-						possibleResults = possibleResults.concat(newValues);
+							for (var m=0; m<possibleResults.length; m++) {
+								if (possibleResults[m].equals(newValue)) {
+									found = true;
+								}
+							}
+
+							if (!found) { 
+								possibleResults.push(newValue);
+							}
+						}
 					}
 				}
 			}
 		}
 
-		return resolveValues(result, possibleResults);
+		return _resolveValues(result, possibleResults, states);
 	}
 
 	return values;

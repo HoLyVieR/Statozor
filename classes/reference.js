@@ -15,6 +15,10 @@ Reference.prototype.toHumanValue = function () {
 }
 
 Reference.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "Reference") {
 		return false;
 	}

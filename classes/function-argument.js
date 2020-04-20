@@ -23,6 +23,10 @@ FunctionArgument.prototype.toHumanValue = function () {
 }
 
 FunctionArgument.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "FunctionArgument") {
 		return false;
 	}

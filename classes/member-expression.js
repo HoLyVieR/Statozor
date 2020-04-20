@@ -18,6 +18,10 @@ MemberExpression.prototype.toHumanValue = function () {
 }
 
 MemberExpression.prototype.equals = function (val) {
+	if (!val) {
+		return false;
+	}
+	
 	if (val.constructor.name !== "MemberExpression") {
 		return false;
 	}
