@@ -20,4 +20,18 @@ FunctionCodeBlock.prototype.equals = function (val) {
 	}
 }
 
+FunctionCodeBlock.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.invocations.length; i++) {
+		size += this.invocations[i].size();
+	}
+
+	for (var i=0; i<this.returns.length; i++) {
+		size += this.returns[i].size();
+	}
+
+	return size;
+};
+
 module.exports = FunctionCodeBlock;

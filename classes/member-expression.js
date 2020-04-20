@@ -41,4 +41,14 @@ MemberExpression.prototype.equals = function (val) {
 	return good;
 }
 
+MemberExpression.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.parts.length; i++) {
+		size += this.parts[i].size();
+	}
+
+	return size;
+};
+
 module.exports = MemberExpression;

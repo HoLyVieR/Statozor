@@ -38,9 +38,21 @@ ObjectStructure.prototype.equals = function (val) {
 			good = false;
 			return;
 		}
+
 	});
 
 	return good;
+};
+
+ObjectStructure.prototype.size = function () {
+	var size = 1;
+	
+	this.properties.forEach(function (value, key, map) {
+		size += key.size();
+		size += value.size();
+	});
+
+	return size;
 };
 
 module.exports = ObjectStructure;

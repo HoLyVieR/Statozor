@@ -20,4 +20,8 @@ Constant.prototype.equals = function (val) {
 	return this.value === val.value;
 }
 
+Constant.prototype.size = function () {
+	return 1;
+};
+
 module.exports = Constant;

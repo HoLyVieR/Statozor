@@ -3,7 +3,7 @@ function input(abc) {
 		return "recursion";
 	}
 
-	return input(false);
+	return input(false) + "test";
 }
 
 function test(cb) {

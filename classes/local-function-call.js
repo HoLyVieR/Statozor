@@ -6,8 +6,8 @@ function LocalFunctionCall(reference, args) {
 	}
 
 	if (typeof args !== "object" || typeof args.length !== "number") {
-                throw new Error("Type of args must be array.");
-        }
+            throw new Error("Type of args must be array.");
+    }
 
 	this.arguments = args;
 	this.reference = reference;
@@ -49,5 +49,16 @@ LocalFunctionCall.prototype.equals = function (val) {
 
 	return good;
 }
+
+LocalFunctionCall.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.arguments.length; i++) {
+		size += this.arguments[i].size();
+	}
+
+	size += this.reference.size();
+	return size;
+};
 
 module.exports = LocalFunctionCall;

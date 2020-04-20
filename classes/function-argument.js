@@ -30,10 +30,6 @@ FunctionArgument.prototype.equals = function (val) {
 	if (val.constructor.name !== "FunctionArgument") {
 		return false;
 	}
-
-	/*if (this.name !== val.name) {
-		return false;
-	}*/
 	
 	if (typeof this.fnct === "string") {
 		if (val.fnct !== this.fnct) {
@@ -49,5 +45,15 @@ FunctionArgument.prototype.equals = function (val) {
 
 	return true;
 }
+
+FunctionArgument.prototype.size = function () {
+	var size = 1;
+
+	if (typeof this.fnct !== "string") {
+		size += this.fnct.size();
+	}
+
+	return size;
+};
 
 module.exports = FunctionArgument;

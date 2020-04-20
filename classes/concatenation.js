@@ -34,4 +34,14 @@ Concatenation.prototype.equals = function (val) {
 	return val.values[0].equals(this.values[0]) && val.values[1].equals(this.values[1]);
 }
 
+Concatenation.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.values.length; i++) {
+		size += this.values[i].size();
+	}
+
+	return size;
+};
+
 module.exports = Concatenation;

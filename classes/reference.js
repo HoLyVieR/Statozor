@@ -12,7 +12,7 @@ function Reference(name) {
 
 Reference.prototype.toHumanValue = function () {
 	return "@{ref(" + this.name.split(CONST_SEPARATOR_ID).pop() + ")}";
-}
+};
 
 Reference.prototype.equals = function (val) {
 	if (!val) {
@@ -24,6 +24,11 @@ Reference.prototype.equals = function (val) {
 	}
 
 	return this.name === val.name;
-}
+};
+
+Reference.prototype.size = function () {
+	return 1;
+};
+
 
 module.exports = Reference;

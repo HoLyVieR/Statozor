@@ -43,4 +43,15 @@ ObjectFunctionCall.prototype.equals = function (val) {
 	return good;
 };
 
+ObjectFunctionCall.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.arguments.length; i++) {
+		size += this.arguments[i].size();
+	}
+
+	size += this.members.size();
+	return size;
+};
+
 module.exports = ObjectFunctionCall;

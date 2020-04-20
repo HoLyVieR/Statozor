@@ -20,4 +20,9 @@ Unknown.prototype.equals = function (val) {
 	return true;
 }
 
+Unknown.prototype.size = function () {
+	return 1;
+};
+
+
 module.exports = Unknown;

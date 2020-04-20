@@ -51,6 +51,17 @@ GlobalFunctionCall.prototype.equals = function (val) {
 	});
 
 	return good;
-}
+};
+
+GlobalFunctionCall.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.arguments.length; i++) {
+		size += this.arguments[i].size();
+	}
+
+	size += this.fnct.size();
+	return size;
+};
 
 module.exports = GlobalFunctionCall;

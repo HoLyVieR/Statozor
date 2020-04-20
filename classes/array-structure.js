@@ -33,4 +33,14 @@ ArrayStructure.prototype.equals = function (val) {
 	return good;
 };
 
+ArrayStructure.prototype.size = function () {
+	var size = 1;
+	
+	for (var i=0; i<this.values.length; i++) {
+		size += this.values[i].size();
+	}
+
+	return size;
+};
+
 module.exports = ArrayStructure;

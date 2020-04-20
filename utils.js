@@ -14,6 +14,7 @@ var PLACEHOLDER_VARIABLE = require("./constant").PLACEHOLDER_VARIABLE;
  */
 
 var ArrayStructure     = require("./classes/array-structure");
+var ComplexValue       = require("./classes/complex-value");
 var Concatenation      = require("./classes/concatenation");
 var Constant           = require("./classes/constant");
 var Context            = require("./classes/context");
@@ -30,6 +31,7 @@ var Unknown            = require("./classes/unknown");
 
 var ALL_TYPE = {
 	ArrayStructure : ArrayStructure,
+	ComplexValue : ComplexValue,
 	Concatenation : Concatenation,
 	Constant : Constant,
 	Context :  Context,
@@ -571,6 +573,12 @@ function replaceArgumentsElements(source, fnct, replacement) {
 			source[i] = replaceArgumentsElements(source[i], fnct, replacement);
 		}
 	} else if (typeof source === "object") {
+		if (source instanceof ComplexValue) {
+			var temp = convertToComplexValue(replaceArgumentsElements(source.variables, fnct, replacement));
+			source.merge(temp);
+			return source;
+		}
+
 		for (var i in source) {
 			source[i] = replaceArgumentsElements(source[i], fnct, replacement);
 		}
@@ -589,6 +597,12 @@ function replaceElements(source, findWhat, replacement) {
 			source[i] = replaceElements(source[i], findWhat, replacement);
 		}
 	} else if (typeof source === "object") {
+		if (source instanceof ComplexValue) {
+			var temp = convertToComplexValue(replaceElements(source.variables, findWhat, replacement));
+			temp.merge(source);
+			return temp;
+		}
+
 		for (var i in source) {
 			source[i] = replaceElements(source[i], findWhat, replacement);
 		}
@@ -696,6 +710,21 @@ function findInvocationsOf(result, element) {
 
 exportFnct.findInvocationsOf = findInvocationsOf;
 
+function applyWidening(symbolicValue) {
+	if (symbolicValue.size() >= 10) {
+		return convertToComplexValue(symbolicValue);
+	}
+	return symbolicValue;
+}
+
+function convertToComplexValue(symbolicValue) {
+	var value = new ComplexValue();
+	value.constants = findObjectType(symbolicValue, Constant);
+	value.variables = findObjectType(symbolicValue, Reference);
+	value.variables = value.variables.concat(findObjectType(symbolicValue, FunctionArgument));
+	return value;
+}
+
 function resolveValues(result, values) {
 	return _resolveValues(result, values, {});
 }
@@ -734,11 +763,21 @@ function _resolveValues(result, values, states) {
 			var newValues = clone(values);
 
 			for (var j=0; j<newValues.length; j++) {
-				newValues[j] = replaceArgumentsElements(newValues[j], nextFunction, invocations[i].arguments);	
-			}
+				var newValue = replaceArgumentsElements(newValues[j], nextFunction, invocations[i].arguments);
+				var found = false;
 
-			newValues = reTypeValue(newValues);
-			possibleResults = possibleResults.concat(newValues);
+				newValue = applyWidening(newValue);
+
+				for (var m=0; m<possibleResults.length; m++) {
+					if (possibleResults[m].equals(newValue)) {
+						found = true;
+					}
+				}
+
+				if (!found) { 
+					possibleResults.push(newValue);
+				}	
+			}
 		}
 
 		return _resolveValues(result, possibleResults, states);
@@ -775,6 +814,8 @@ function _resolveValues(result, values, states) {
 						for (var l=0; l<newValues.length; l++) {
 							var newValue = replaceElements(newValues[l], call[i], codeBlock.returns[k]);
 							var found = false;
+
+							newValue = applyWidening(newValue);
 
 							for (var m=0; m<possibleResults.length; m++) {
 								if (possibleResults[m].equals(newValue)) {
