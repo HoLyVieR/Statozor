@@ -1,8 +1,16 @@
-function tmp(foo) {
-	var test = "1";
-
-	for (var i=0; i<5; i++) {
-		test += "a";
-		eval(test);
-	}
+function test(cb) {
+	bob(cb);
 }
+
+function bob(abc) {
+	abc("test");
+}
+
+var a;
+
+a = function (foo) {
+	eval(foo);
+	eval(input());
+};
+
+test(a);

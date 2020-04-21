@@ -1003,6 +1003,15 @@ function analysis(tree, context, partialScope, useNewScope) {
 			let variableName = listVar[i];
 			newScope.set(variableName, scopeName + variableName);
 		}
+
+		var listFunction = collectFunction(tree);
+
+		for (let i=0; i<listFunction.length; i++) {
+			if (listFunction[i].type === "FunctionExpression") {
+				var tmpName = "expr" + (Math.random().toString(16).substr(2));
+				newScope.set(listFunction[i].id.name, scopeName + tmpName);
+			}
+		}
 	} else {
 		newScope = scope;
 	}
